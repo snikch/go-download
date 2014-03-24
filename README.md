@@ -14,6 +14,7 @@ This is a hobby project, not stable software (yet).
 - [x] Basic fixed size chunked http downloading
 - [x] Download configuration based on resource location
 - [x] Resume downloads
+- [x] CLI is separate from the core process (run commands from cli that communicate with core proc)
 
 ## In Progress
 
