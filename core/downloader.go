@@ -30,29 +30,25 @@ type Downloader struct {
 	SpeedMonitor   *SpeedMonitor
 	TotalChunks    int
 
-	complete       chan bool
 	nextChunkIndex int
-	progress       chan int
+	progressChan   chan *Downloader
 	resume         bool
 }
 
-func NewDownloader(url string) (d Downloader, err error) {
+func NewDownloader(url string, updater chan *Downloader) (d Downloader, err error) {
 	resource, err := NewResource(url)
 	if err != nil {
 		return
 	}
-	d = Downloader{}
+	d = Downloader{progressChan: updater}
 	d.Resource = &resource
 	return
 }
 
-func (d *Downloader) Start(resume bool) (chan int, chan bool, error) {
-	d.MaxChunks = d.Resource.provider.MaxChunks()
-	d.progress = make(chan int)
-	d.complete = make(chan bool)
+func (d *Downloader) Start(resume bool) {
+	d.MaxChunks = d.Resource.Hoster.MaxChunks()
 	d.resume = resume
 	go d.startChunks()
-	return d.progress, d.complete, nil
 }
 
 func (d *Downloader) startChunks() (err error) {
@@ -71,11 +67,11 @@ func (d *Downloader) startChunks() (err error) {
 	d.Size = ByteSize(resp.ContentLength)
 
 	// Create an appropriate amount of chunks
-	//	 downloader.chunks || (resource.size / provider.chunkSize)
+	//	 downloader.chunks || (resource.size / Hoster.chunkSize)
 
 	// How many chunks are we gonna need?
 	d.TotalChunks = int(
-		math.Ceil(float64(d.Size) / float64(d.Resource.provider.ChunkSize())))
+		math.Ceil(float64(d.Size) / float64(d.Resource.Hoster.ChunkSize())))
 
 	if d.TotalChunks < d.MaxChunks {
 		d.MaxChunks = d.TotalChunks
@@ -94,7 +90,7 @@ func (d *Downloader) startChunks() (err error) {
 	go d.SpeedMonitor.Start()
 
 	for i := 0; i < d.TotalChunks; i++ {
-		end := start + ByteSize(d.Resource.provider.ChunkSize())
+		end := start + ByteSize(d.Resource.Hoster.ChunkSize())
 		if end > d.Size {
 			end = d.Size
 		}
@@ -116,7 +112,7 @@ func (d *Downloader) startChunks() (err error) {
 		select {
 		case _ = <-chunkProgress:
 			d.updateProgress()
-			d.progress <- d.Progress()
+			d.progressChan <- d
 			amountDownloaded <- d.Downloaded
 
 		case _ = <-chunkComplete:
@@ -194,7 +190,6 @@ func (d *Downloader) DestinationFile() string {
 func (d *Downloader) Close() {
 	d.SpeedMonitor.Stop()
 	d.WriteCloser.Close()
-	d.complete <- true
 }
 
 // Move to main package
